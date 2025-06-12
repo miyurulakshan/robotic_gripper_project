@@ -1,0 +1,9 @@
+git status
+
+git add .
+
+git add file1.py file2.js
+
+git commit -m "Add new feature or fix bug"
+
+git push

@@ -1,0 +1,8 @@
+git clone https://github.com/miyurulakshan/robotic_gripper_project.git
+
+cd robotic_gripper_project
+
+python -m venv venv
+
+pip install -r requirements.txt
+
