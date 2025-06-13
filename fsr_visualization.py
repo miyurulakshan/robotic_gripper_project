@@ -1,5 +1,6 @@
 # File: fsr_visualization.py
 # A creative, intuitive visualization that mimics the gripper jaws.
+# MODIFIED for a vertical 4-sensor-per-jaw arrangement.
 
 import pygame
 import math
@@ -30,20 +31,25 @@ class FSRVisualizer:
         self.value_font = pygame.font.Font(None, 22)
 
         # --- Colors ---
-        self.BG_COLOR = (15, 20, 30)       # Very dark blue
-        self.JAW_COLOR = (40, 50, 65)      # Dark grey-blue
-        self.TEXT_COLOR = (220, 220, 240)  # Light grey-blue
-        self.COF_COLOR = (255, 255, 0)     # Yellow for Center of Force
+        self.BG_COLOR = (15, 20, 30)      # Very dark blue
+        self.JAW_COLOR = (40, 50, 65)     # Dark grey-blue
+        self.TEXT_COLOR = (220, 220, 240) # Light grey-blue
+        self.COF_COLOR = (255, 255, 0)    # Yellow for Center of Force
 
-        # --- Gripper Layout ---
-        # Assuming FSRs 1-4 are on the left, 5-8 are on the right
-        self.left_jaw_rect = pygame.Rect(50, 80, 250, 320)
-        self.right_jaw_rect = pygame.Rect(self.width - 300, 80, 250, 320)
+        # --- Gripper Layout (MODIFIED FOR VERTICAL SENSORS) ---
+        # Jaws are now narrower and taller to better suit the vertical layout.
+        jaw_width = 150
+        jaw_height = 360
+        self.left_jaw_rect = pygame.Rect(100, 80, jaw_width, jaw_height)
+        self.right_jaw_rect = pygame.Rect(self.width - 100 - jaw_width, 80, jaw_width, jaw_height)
         
         # Positions for the 4 sensor pads on each jaw (relative to the jaw's top-left)
+        # These are now in a single column, centered horizontally.
         pad_positions = [
-            (75, 60), (175, 60),  # Top row
-            (75, 240), (175, 240) # Bottom row
+            (jaw_width / 2, 60),  # Sensor 1 (Top)
+            (jaw_width / 2, 140), # Sensor 2
+            (jaw_width / 2, 220), # Sensor 3
+            (jaw_width / 2, 300)  # Sensor 4 (Bottom)
         ]
 
         # Store the absolute screen coordinates for each sensor pad
