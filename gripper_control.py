@@ -18,7 +18,7 @@ class GripperController:
     def __init__(self):
         self.GRAB_THRESHOLD = 300
         self.EMERGENCY_PRESSURE = 600
-        self.GRAB_SPEED = 0.01
+        self.GRAB_SPEED = 0.1
         self.RELEASE_SPEED = 2
 
         self.state = GripperState.IDLE

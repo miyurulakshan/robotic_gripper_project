@@ -1,80 +1,83 @@
 # File: main.py
-# This version passes the real-time feedback to the controller for synced logic.
+# This version uses the correct, stable, and fast closed-loop architecture.
 
 import serial
 import time
 import sys
 import pygame
+import socket
 
-# Import the classes for our unified window and the controller
 from interactive_gripper_visualization import InteractiveGripperVisualizer
 from gripper_control import GripperController 
 
 # --- CONFIGURATION ---
 ARDUINO_PORT = 'COM5'
 BAUD_RATE = 115200
+UDP_IP = "127.0.0.1"
+UDP_PORT = 5005
 
 def main():
-    """The main function to initialize and run the fully synchronized system."""
     print("--- Robotic Gripper Control System: Fully Synchronized ---")
-
-    # --- Initialize Pygame ---
     pygame.init()
     pygame.font.init()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    # --- Initialize Hardware Communication ---
     try:
         arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=0.1)
         time.sleep(2)
         print(f"Successfully connected to Arduino on {ARDUINO_PORT}")
+        print(f"Broadcasting FSR data to {UDP_IP}:{UDP_PORT}. Run data_logger.py to view.")
     except serial.SerialException as e:
         print(f"FATAL: Could not open serial port {ARDUINO_PORT}. Details: {e}")
         sys.exit(1)
 
-    # --- Create the single, unified window and the controller ---
     visualizer = InteractiveGripperVisualizer()
     controller = GripperController()
 
-    # --- Data Persistence Variables ---
     last_known_angle = 0
     last_known_fsr_data = [0] * 8
+    serial_buffer = ""
 
-    # --- Main Application Loop ---
     running = True
     try:
+        # --- STABLE & FAST CLOSED-LOOP ARCHITECTURE ---
         while running:
-            # 1. Handle Events for the window
-            command = visualizer.check_events(pygame.event.get())
-            if command == "quit":
-                running = False
-                continue
-            if command:
-                controller.handle_command(command)
-
-            # 2. Read and Parse the feedback packet from Arduino
+            # 1. Read the latest state from the hardware
             if arduino.in_waiting > 0:
+                serial_buffer += arduino.read(arduino.in_waiting).decode('utf-8', errors='ignore')
+
+            start_index = serial_buffer.find('S')
+            end_index = serial_buffer.find('E')
+
+            if start_index != -1 and end_index != -1 and start_index < end_index:
+                packet_str = serial_buffer[start_index + 1 : end_index]
+                serial_buffer = serial_buffer[end_index + 1:]
                 try:
-                    arduino.reset_input_buffer()
-                    line = arduino.readline().decode('utf-8').rstrip()
-                    if line:
-                        parsed_data = [int(val) for val in line.split(',')]
-                        if len(parsed_data) == 9:
-                            last_known_angle = parsed_data[0]
-                            last_known_fsr_data = parsed_data[1:]
-                except (ValueError, UnicodeDecodeError):
+                    parsed_data = [int(val) for val in packet_str.split(',')]
+                    if len(parsed_data) == 9:
+                        last_known_angle = parsed_data[0]
+                        last_known_fsr_data = parsed_data[1:]
+                        sock.sendto(packet_str.encode('utf-8'), (UDP_IP, UDP_PORT))
+                except (ValueError):
                     pass
             
-            # 3. FIX: Run control logic, giving it the REAL-TIME angle feedback
+            # 2. Decide on the next action based on user input and the real state
+            command = visualizer.check_events(pygame.event.get())
+            if command == "quit": running = False; continue
+            if command: controller.handle_command(command)
+            
             target_angle = controller.update(last_known_fsr_data, last_known_angle)
 
-            # 4. Send the new TARGET angle command to the Arduino
+            # 3. Act by sending the new command to the hardware
             arduino.write(bytes([target_angle]))
 
-            # 5. Update the visualization using the REAL-TIME FEEDBACK
+            # 4. Visualize the real state that was read in step 1
             visualizer.update(last_known_angle, controller.state.name, last_known_fsr_data, controller.object_detected)
-            
-            # 6. Refresh the entire display once
             pygame.display.update()
+            
+            # Minimal delay to keep the loop fast without maxing out the CPU
+            time.sleep(0.002)
+
 
     except KeyboardInterrupt:
         print("\nProgram interrupted by user.")
