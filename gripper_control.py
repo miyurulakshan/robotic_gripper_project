@@ -1,47 +1,105 @@
 # File: gripper_control.py
+# This version has more robust grab detection logic.
+
+from enum import Enum, auto
+
+class GripperState(Enum):
+    IDLE = auto()
+    GRABBING = auto()
+    HOLDING = auto()
+    RELEASING = auto()
+    FAILED_GRAB = auto()
+    EMERGENCY_RELEASE = auto()
 
 class GripperController:
     """
-    Implements the force control loop for the gripper.
+    Implements a state machine with more robust grab detection.
     """
-    def __init__(self, pressure_limit, initial_angle=0, step=5):
-        """
-        Initializes the controller.
-        - pressure_limit: The FSR reading above which the gripper should release.
-        - initial_angle: The starting angle of the servo (0-100).
-        - step: How many degrees to release the gripper by when pressure is too high.
-        """
-        self.pressure_limit = pressure_limit
-        self.current_angle = initial_angle
-        self.release_step = step
-        self.is_gripping = False # State to control gripper action
+    def __init__(self):
+        self.GRAB_THRESHOLD = 300
+        self.EMERGENCY_PRESSURE = 600
+        self.GRAB_SPEED = 0.01
+        self.RELEASE_SPEED = 2
 
-    def set_target_angle(self, angle):
-        """
-        Allows manually setting a new target angle. Call this to close the gripper.
-        """
-        self.current_angle = max(0, min(100, angle)) # Clamp between 0 and 100
-        self.is_gripping = True
+        self.state = GripperState.IDLE
+        self.target_angle = 0.0
+        self.object_detected = False
 
-    def control_step(self, fsr_values):
+    def _check_emergency(self, fsr_values):
+        if any(v > self.EMERGENCY_PRESSURE for v in fsr_values):
+            self.state = GripperState.EMERGENCY_RELEASE
+            print(f"!!! EMERGENCY: Pressure > {self.EMERGENCY_PRESSURE}. Releasing!")
+            return True
+        return False
+
+    def _check_grab_success(self, fsr_values, actual_angle):
         """
-        Executes one step of the control loop.
-        Checks pressure and adjusts the servo angle if necessary.
-        Returns the new angle to be sent to the Arduino.
+        Checks if the grip is successful.
+        A grip is now considered successful if ANY 2 sensors on a single jaw
+        are over the threshold.
         """
-        if not self.is_gripping or not fsr_values:
-            return int(self.current_angle)
+        left_jaw = fsr_values[0:4]
+        right_jaw = fsr_values[4:8]
+
+        for jaw in [left_jaw, right_jaw]:
+            # Count how many sensors on this jaw are being pressed
+            pressed_sensor_count = 0
+            for sensor_value in jaw:
+                if sensor_value > self.GRAB_THRESHOLD:
+                    pressed_sensor_count += 1
             
-        # Check if any sensor has exceeded the pressure limit
-        is_over_limit = any(value > self.pressure_limit for value in fsr_values)
+            # If 2 or more sensors on this jaw are pressed, we have a successful grab
+            if pressed_sensor_count >= 2:
+                self.state = GripperState.HOLDING
+                self.object_detected = True
+                self.target_angle = actual_angle 
+                print(f"Object detected and held at angle {int(self.target_angle)}°")
+                return True
+            
+        return False # Return false if no jaw had at least 2 pressed sensors
 
-        if is_over_limit:
-            print(f"Pressure limit of {self.pressure_limit} exceeded! Releasing...")
-            # Decrease the angle to release pressure
-            self.current_angle -= self.release_step
-            # Ensure the angle does not go below 0 (fully open)
-            if self.current_angle < 0:
-                self.current_angle = 0
+    def handle_command(self, command):
+        if command == "grab" and self.state in [GripperState.IDLE, GripperState.FAILED_GRAB]:
+            self.state = GripperState.GRABBING
+            self.target_angle = 0
+            self.object_detected = False
+            print("Command: GRAB. Starting grab sequence.")
         
-        # Return the calculated angle, ensuring it's an integer
-        return int(self.current_angle)
+        elif command == "release" and self.state in [GripperState.HOLDING]:
+            self.state = GripperState.RELEASING
+            print("Command: RELEASE. Releasing object.")
+
+        elif command == "emergency":
+            self.state = GripperState.EMERGENCY_RELEASE
+            print("Command: EMERGENCY. Releasing immediately.")
+            
+    def update(self, fsr_values, actual_angle):
+        """
+        Runs the state machine, using the actual_angle for decisions.
+        """
+        if not fsr_values:
+            return int(self.target_angle)
+
+        if self.state not in [GripperState.EMERGENCY_RELEASE, GripperState.RELEASING]:
+            if self._check_emergency(fsr_values):
+                pass
+
+        if self.state == GripperState.GRABBING:
+            if not self._check_grab_success(fsr_values, actual_angle):
+                self.target_angle += self.GRAB_SPEED
+                if actual_angle >= 99:
+                    self.state = GripperState.FAILED_GRAB
+                    print("Grab failed: Physical gripper reached 100 degrees with no object.")
+        
+        elif self.state == GripperState.HOLDING:
+            pass
+
+        elif self.state in [GripperState.RELEASING, GripperState.EMERGENCY_RELEASE, GripperState.FAILED_GRAB]:
+            self.target_angle -= self.RELEASE_SPEED
+            if actual_angle <= 1:
+                self.state = GripperState.IDLE
+                self.object_detected = False
+                print("Gripper is now physically open and IDLE.")
+
+        self.target_angle = max(0, min(100, self.target_angle))
+        return int(self.target_angle)
