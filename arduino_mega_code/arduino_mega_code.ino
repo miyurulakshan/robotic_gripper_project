@@ -10,7 +10,7 @@ const int SERVO_PIN = 2;
 Servo gripperServo;
 
 // Define the analog input pins for the 8 FSRs
-const int FSR_PINS[8] = {A1, A2, A3, A4, A5, A6, A7, A8};
+const int FSR_PINS[8] = {A6, A7, A5, A4, A2, A1, A3, A8};
 
 void setup() {
   // Start serial communication at a high baud rate for responsiveness
