@@ -23,8 +23,8 @@ class GripperController:
         # --- NEW: Parameters for Dynamic Grab Speed ---
         self.MAX_GRAB_SPEED = 0.2         # Speed when no force is detected
         self.MIN_GRAB_SPEED = 0.001        # Speed when force is high (just before grabbing)
-        self.FORCE_SENSITIVITY_START = 50 # FSR value at which to start slowing down
-        self.FORCE_SENSITIVITY_END = 280  # FSR value at which speed is at its minimum
+        self.FORCE_SENSITIVITY_START = 30 # FSR value at which to start slowing down
+        self.FORCE_SENSITIVITY_END = 180  # FSR value at which speed is at its minimum
         # --- END NEW ---
 
         self.state = GripperState.IDLE # The initial state is IDLE

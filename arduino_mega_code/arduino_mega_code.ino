@@ -5,7 +5,7 @@
 
 const int SERVO_PIN = 2;
 Servo gripperServo;
-const int FSR_PINS[8] = {A6, A7, A5, A4, A2, A1, A3, A8};
+const int FSR_PINS[8] = {A3, A6, A4, A4, A8, A5, A7, A1};
 int currentServoAngle = 0;
 
 void setup() {

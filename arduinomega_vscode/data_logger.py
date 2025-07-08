@@ -27,7 +27,6 @@ try:
         data, addr = sock.recvfrom(1024) 
         
         # Decode the received bytes into a string and print it
-        print("_________________________________________")
         print(data.decode('utf-8'))
 
 except KeyboardInterrupt:
