@@ -2,8 +2,8 @@ import asyncio
 import websockets
 
 # Import our custom modules
-from plotter import create_comparison_plot
-from kalman_filter import KalmanFilter
+from data_analysis.plotter import create_comparison_plot
+from data_analysis.kalman_filter import KalmanFilter
 
 # --- Configuration ---
 SAMPLE_BATCH_SIZE = 1000

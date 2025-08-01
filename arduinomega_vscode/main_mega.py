@@ -7,7 +7,7 @@ import sys
 import pygame
 import socket
 
-from interactive_gripper_visualization import InteractiveGripperVisualizer
+from arduinomega_vscode.interactive_gripper_visualization import InteractiveGripperVisualizer
 from gripper_control import GripperController 
 
 # --- CONFIGURATION ---
