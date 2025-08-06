@@ -10,7 +10,7 @@ const char* password = "11221122";
 const char* websockets_server = "ws://192.168.1.13:8765"; // Your PC's IP address
 
 const int NUM_SENSORS = 8;
-const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 1};
+const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 2};
 
 // --- NEW: Define pins for both servos and potentiometers ---
 const int potPin1 = 9;
@@ -32,8 +32,8 @@ void onEventsCallback(WebsocketsEvent event, String data) {
 
 void onMessageCallback(WebsocketsMessage message) {
     String msg = message.data();
-    Serial.print("Command received from server: ");
-    Serial.println(msg);
+    //Serial.print("Command received from server: ");
+    //Serial.println(msg);
 
     // --- UPDATED: Handle commands for both servos ---
     if (msg.startsWith("SERVO1:")) {
@@ -90,6 +90,7 @@ void loop() {
             int fsrReading = analogRead(fsrPins[i]);
             message += String(fsrReading);
         }
+        Serial.println(message);
         client.send(message);
 
     } else {
