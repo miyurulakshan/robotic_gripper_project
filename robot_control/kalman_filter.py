@@ -1,3 +1,4 @@
+# filename: kalman_filter.py
 class KalmanFilter:
     def __init__(self, process_noise=1e-5, measurement_noise=0.1, initial_value=0):
         """
@@ -26,5 +27,3 @@ class KalmanFilter:
         self.P = (1 - K) * P_minus
 
         return self.x_hat
-
-

@@ -4,49 +4,25 @@
 
 using namespace websockets;
 
-// --- IMPORTANT: CHANGE THESE VALUES ---
+// --- CONFIGURATION ---
 const char* ssid = "SLT-4G_12BED";
 const char* password = "11221122";
-const char* websockets_server = "ws://192.168.1.13:8765";
-// --- ---
+const char* websockets_server = "ws://192.168.1.13:8765"; // Your PC's IP address
 
-// --- SENSOR CONFIGURATION for ESP32-S3 ---
 const int NUM_SENSORS = 8;
 const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 1};
-// --- ---
 
-// --- SERVO & POTENTIOMETER CONFIGURATION ---
-const int servoPin = 10;
-const int potPin = 9;
-Servo myServo;
-// --- ---
+// --- NEW: Define pins for both servos and potentiometers ---
+const int potPin1 = 9;
+const int servoPin1 = 10;
+const int potPin2 = 11;    // New potentiometer pin
+const int servoPin2 = 12;    // New servo pin
 
-// --- KALMAN FILTER for POTENTIOMETER ---
-struct KalmanFilter {
-    float Q = 1e-4; // Process noise
-    float R = 0.0005; // Measurement noise
-    float P = 1.0;  // Estimation error covariance
-    float x_hat = 0;// Estimated value
-};
-
-KalmanFilter potFilter;
-
-float updateKalman(KalmanFilter &kf, float measurement) {
-    // Prediction
-    float x_hat_minus = kf.x_hat;
-    float P_minus = kf.P + kf.Q;
-
-    // Update (Correction)
-    float K = P_minus / (P_minus + kf.R);
-    kf.x_hat = x_hat_minus + K * (measurement - x_hat_minus);
-    kf.P = (1 - K) * P_minus;
-    return kf.x_hat;
-}
-// --- ---
-
+Servo myServo1;
+Servo myServo2; // New servo object
 WebsocketsClient client;
 
-void onWebsocketEvent(WebsocketsEvent event, String data) {
+void onEventsCallback(WebsocketsEvent event, String data) {
     if (event == WebsocketsEvent::ConnectionOpened) {
         Serial.println("Connection to server opened.");
     } else if (event == WebsocketsEvent::ConnectionClosed) {
@@ -54,17 +30,29 @@ void onWebsocketEvent(WebsocketsEvent event, String data) {
     }
 }
 
+void onMessageCallback(WebsocketsMessage message) {
+    String msg = message.data();
+    Serial.print("Command received from server: ");
+    Serial.println(msg);
+
+    // --- UPDATED: Handle commands for both servos ---
+    if (msg.startsWith("SERVO1:")) {
+        int angle = msg.substring(7).toInt();
+        myServo1.write(constrain(angle, 0, 180));
+    } else if (msg.startsWith("SERVO2:")) {
+        int angle = msg.substring(7).toInt();
+        myServo2.write(constrain(angle, 0, 180));
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    myServo.attach(servoPin);
-    Serial.println("Servo Initialized.");
+    myServo1.attach(servoPin1);
+    myServo2.attach(servoPin2); // Attach the second servo
+    Serial.println("Both Servos Initialized.");
     
-    // --- Initialize Kalman Filter with the first reading ---
-    potFilter.x_hat = analogRead(potPin);
-    Serial.println("Potentiometer Kalman Filter Initialized.");
-
     WiFi.begin(ssid, password);
     Serial.print("Connecting to Wi-Fi...");
     while (WiFi.status() != WL_CONNECTED) {
@@ -75,7 +63,8 @@ void setup() {
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
 
-    client.onEvent(onWebsocketEvent);
+    client.onEvent(onEventsCallback);
+    client.onMessage(onMessageCallback);
 
     Serial.println("Connecting to WebSocket server...");
     while (!client.connect(websockets_server)) {
@@ -85,25 +74,21 @@ void setup() {
 }
 
 void loop() {
-    // --- Servo Control Logic (Local & Filtered) ---
-    int potValueRaw = analogRead(potPin);
-    float potValueFiltered = updateKalman(potFilter, potValueRaw);
-    
-    // Map the FILTERED potentiometer value to the servo angle
-    int servoAngle = map(potValueFiltered, 0, 4095, 0, 180);
-    myServo.write(servoAngle);
-
-    // --- WebSocket Communication Logic ---
     if (client.available()) {
-        client.poll();
+        client.poll(); 
 
-        String message = "";
+        // Read both raw potentiometer values
+        int potValue1 = analogRead(potPin1);
+        int potValue2 = analogRead(potPin2);
+
+        // --- UPDATED: Create the new message string ---
+        // Format: "pot1,pot2,fsr1,fsr2,..."
+        String message = String(potValue1) + "," + String(potValue2);
+        
         for (int i = 0; i < NUM_SENSORS; i++) {
+            message += ",";
             int fsrReading = analogRead(fsrPins[i]);
             message += String(fsrReading);
-            if (i < NUM_SENSORS - 1) {
-                message += ",";
-            }
         }
         client.send(message);
 

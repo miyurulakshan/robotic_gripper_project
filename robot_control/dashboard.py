@@ -1,3 +1,4 @@
+# filename: dashboard.py
 import tkinter as tk
 from tkinter import ttk
 import matplotlib.pyplot as plt
@@ -21,30 +22,22 @@ class Dashboard:
         plot_frame = ttk.Frame(self.root, padding="10")
         plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # --- Matplotlib Plotting Setup (Reordered) ---
-        # Create a 4-row, 2-column grid for the subplots
         self.fig, self.axs = plt.subplots(4, 2, figsize=(14, 10))
-        # NOTE: We do NOT flatten the axs array, we will access it by (row, col)
         
         self.lines_raw = [None] * num_sensors
         self.lines_filtered = [None] * num_sensors
 
         for i in range(num_sensors):
-            # Determine the correct row and column for the plot
-            if i < 4:  # FSR 1-4 go in the left column
+            if i < 4:
                 row, col = i, 0
-            else:      # FSR 5-8 go in the right column
+            else:
                 row, col = i - 4, 1
             
-            ax = self.axs[row, col] # Select the correct subplot
-
+            ax = self.axs[row, col]
             line_raw, = ax.plot([], [], 'b-', alpha=0.5, animated=True, label="Raw")
             line_filtered, = ax.plot([], [], 'r-', linewidth=1.5, animated=True, label="Filtered")
-            
-            # Store the line objects in the correct index
             self.lines_raw[i] = line_raw
             self.lines_filtered[i] = line_filtered
-
             ax.set_title(f'FSR Sensor {i+1}', fontsize=9)
             ax.set_ylim(0, 4100)
             ax.grid(True)
@@ -65,21 +58,22 @@ class Dashboard:
     def _animate(self, frame):
         with self.data_lock:
             for i in range(self.num_sensors):
-                # Determine the correct subplot axis to update
                 if i < 4:
                     row, col = i, 0
                 else:
                     row, col = i - 4, 1
                 ax = self.axs[row, col]
-
                 self.lines_raw[i].set_data(self.time_axis, self.raw_data[i])
                 self.lines_filtered[i].set_data(self.time_axis, self.filtered_data[i])
                 if self.time_axis:
                     ax.set_xlim(self.time_axis[0], self.time_axis[-1])
-        
-        # Return a flattened list of all line objects for the animation
         return self.lines_raw + self.lines_filtered
 
     def run(self):
-        self.ani = animation.FuncAnimation(self.fig, self._animate, interval=50, blit=True)
+        self.ani = animation.FuncAnimation(self.fig, self._animate, interval=50, blit=True, cache_frame_data=False)
         self.root.mainloop()
+
+    def stop(self):
+        if hasattr(self, 'ani') and self.ani.event_source:
+            print("[Dashboard] Stopping animation timer.")
+            self.ani.event_source.stop()
