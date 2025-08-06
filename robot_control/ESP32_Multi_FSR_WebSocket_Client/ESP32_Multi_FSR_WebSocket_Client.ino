@@ -12,14 +12,13 @@ const char* websockets_server = "ws://192.168.1.13:8765"; // Your PC's IP addres
 const int NUM_SENSORS = 8;
 const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 2};
 
-// --- NEW: Define pins for both servos and potentiometers ---
 const int potPin1 = 9;
 const int servoPin1 = 10;
-const int potPin2 = 11;    // New potentiometer pin
-const int servoPin2 = 12;    // New servo pin
+const int potPin2 = 11;
+const int servoPin2 = 12;
 
 Servo myServo1;
-Servo myServo2; // New servo object
+Servo myServo2;
 WebsocketsClient client;
 
 void onEventsCallback(WebsocketsEvent event, String data) {
@@ -30,27 +29,29 @@ void onEventsCallback(WebsocketsEvent event, String data) {
     }
 }
 
+// --- THIS FUNCTION IS UPDATED ---
 void onMessageCallback(WebsocketsMessage message) {
     String msg = message.data();
     //Serial.print("Command received from server: ");
     //Serial.println(msg);
 
-    // --- UPDATED: Handle commands for both servos ---
-    if (msg.startsWith("SERVO1:")) {
-        int angle = msg.substring(7).toInt();
-        myServo1.write(constrain(angle, 0, 180));
-    } else if (msg.startsWith("SERVO2:")) {
-        int angle = msg.substring(7).toInt();
-        myServo2.write(constrain(angle, 0, 180));
-    }
+    // Look for the new "PULSE1:" command for high-precision control
+    if (msg.startsWith("PULSE1:")) {
+        int pulse_width = msg.substring(7).toInt();
+        myServo1.writeMicroseconds(pulse_width); // Use the high-precision function
+    } 
+    // You could add a "PULSE2:" command here later if needed
+    // else if (msg.startsWith("PULSE2:")) { ... }
 }
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    myServo1.attach(servoPin1);
-    myServo2.attach(servoPin2); // Attach the second servo
+    // Attach the servo. For ESP32, you can optionally specify the min/max pulse widths.
+    // This improves the accuracy of the standard .write() but we will use .writeMicroseconds() directly.
+    myServo1.attach(servoPin1, 1000, 2000); // min and max pulse in microseconds
+    myServo2.attach(servoPin2);
     Serial.println("Both Servos Initialized.");
     
     WiFi.begin(ssid, password);
@@ -77,20 +78,17 @@ void loop() {
     if (client.available()) {
         client.poll(); 
 
-        // Read both raw potentiometer values
         int potValue1 = analogRead(potPin1);
         int potValue2 = analogRead(potPin2);
 
-        // --- UPDATED: Create the new message string ---
-        // Format: "pot1,pot2,fsr1,fsr2,..."
         String message = String(potValue1) + "," + String(potValue2);
         
         for (int i = 0; i < NUM_SENSORS; i++) {
             message += ",";
             int fsrReading = analogRead(fsrPins[i]);
             message += String(fsrReading);
+            Serial.println(message);
         }
-        Serial.println(message);
         client.send(message);
 
     } else {
