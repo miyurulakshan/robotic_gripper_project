@@ -20,11 +20,16 @@ class GripperState(Enum):
 
 # --- CONFIGURATION & TUNING ---
 WEBSOCKET_URI = "ws://localhost:8765"
-OVERALL_TARGET_FORCE = 1600
+OVERALL_TARGET_FORCE = 1000
 MIN_FORCE_PER_CLAW = 1000
-KP = 0.008
-KI = 0.0005
-KD = 0.001
+ACCEPTABLE_ERROR_MARGIN = 10
+MAX_CLAW_FORCE = 1600  # <-- NEW: Safety limit for a single claw
+
+# Example new values
+KP = 0.0025   # Slightly stronger reaction for quicker correction
+KI = 0.00006 # Help eliminate steady-state error a bit faster
+KD = 0.0031     # Slightly reduced to avoid slowing the settling
+
 SERVO_OPEN_PULSE = 0
 SERVO_MAX_CLOSE_PULSE = 2000
 SERVO_STEP_SIZE = 1.0
@@ -86,11 +91,9 @@ def data_processing_thread():
                 left_raw_readings = [all_readings[i] for i in LEFT_CLAW_INDICES]
                 right_raw_readings = [all_readings[i] for i in RIGHT_CLAW_INDICES]
 
-                # Calculate the simple, unfiltered average for comparison
                 left_raw_avg = sum(left_raw_readings) / len(left_raw_readings)
                 right_raw_avg = sum(right_raw_readings) / len(right_raw_readings)
 
-                # Create measurement vectors (z) for the Kalman filter
                 left_z = np.array([[r] for r in left_raw_readings])
                 right_z = np.array([[r] for r in right_raw_readings])
 
@@ -99,27 +102,33 @@ def data_processing_thread():
                     kf_right_claw.x_hat = np.array([[right_raw_avg]])
                     is_first_reading = False
 
-                # Get the high-quality filtered force value
                 left_force = kf_left_claw.update(left_z)[0, 0]
                 right_force = kf_right_claw.update(right_z)[0, 0]
                 
-                # Use the maximum force for PID feedback
                 overall_force = max(left_force, right_force)
 
-                # --- SEND DETAILED DATA TO DASHBOARD ---
                 data_to_send = f"DATA:{left_raw_avg},{left_force},{right_raw_avg},{right_force},{overall_force}"
                 outgoing_queue.put(data_to_send)
-                # -----------------------------------------
 
                 if current_state == GripperState.CLOSING:
+                    # --- NEW SAFETY LOGIC ---
+                    # Check if either claw has exceeded the absolute maximum force.
+                    if left_force > MAX_CLAW_FORCE or right_force > MAX_CLAW_FORCE:
+                        current_state = GripperState.HOLDING
+                        print(f"[SAFETY OVERRIDE] Force limit of {MAX_CLAW_FORCE} exceeded. Switching to HOLDING.")
+                        # Skip the rest of the PID logic for this cycle to prevent further tightening
+                        continue 
+                    # --- END OF NEW SAFETY LOGIC ---
+
                     pid_output = pid.update(overall_force)
                     servo_pulse += pid_output * SERVO_STEP_SIZE
                     servo_pulse = max(SERVO_OPEN_PULSE, min(SERVO_MAX_CLOSE_PULSE, servo_pulse))
                     outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
                     
-                    if left_force > MIN_FORCE_PER_CLAW and right_force > MIN_FORCE_PER_CLAW:
+                    error = OVERALL_TARGET_FORCE - overall_force
+                    if abs(error) < ACCEPTABLE_ERROR_MARGIN and left_force > MIN_FORCE_PER_CLAW and right_force > MIN_FORCE_PER_CLAW:
                         current_state = GripperState.HOLDING
-                        print(f"[State Change] Successful grasp. State: {current_state.name}")
+                        print(f"[State Change] Target force achieved. State: {current_state.name}")
 
                 elif current_state == GripperState.RELEASING:
                     servo_pulse = float(SERVO_OPEN_PULSE)
