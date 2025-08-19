@@ -10,7 +10,7 @@ const char* password = "11221122";
 const char* websockets_server = "ws://192.168.1.13:8765"; // Your PC's IP address
 
 const int NUM_SENSORS = 8;
-const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 2};
+const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 1};
 
 const int potPin1 = 9;
 const int servoPin1 = 10;
