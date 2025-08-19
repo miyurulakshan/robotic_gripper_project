@@ -32,7 +32,7 @@ KI = 0.0000001
 KD = 0.000001
 
 # --- MODIFIED: Servo Physical Parameters ---
-SERVO_OPEN_PULSE = 1000  # The pulse value where the servo starts moving
+SERVO_OPEN_PULSE = 800  # The pulse value where the servo starts moving
 SERVO_MAX_CLOSE_PULSE = 2100 # Maximum safe pulse value
 SERVO_STEP_SIZE = 20.0   # The effective minimum step size of the servo
 
