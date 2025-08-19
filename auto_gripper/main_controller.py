@@ -20,21 +20,32 @@ class GripperState(Enum):
 
 # --- CONFIGURATION & TUNING ---
 WEBSOCKET_URI = "ws://localhost:8765"
-OVERALL_TARGET_FORCE = 1000
-MIN_FORCE_PER_CLAW = 1000
-ACCEPTABLE_ERROR_MARGIN = 10
-MAX_CLAW_FORCE = 1600  # <-- NEW: Safety limit for a single claw
+OVERALL_TARGET_FORCE = 700
+ACCEPTABLE_ERROR_MARGIN = 100
+MAX_CLAW_FORCE = 2000
+MIN_FORCE_PER_CLAW = OVERALL_TARGET_FORCE
 
-# Example new values
-KP = 0.0025   # Slightly stronger reaction for quicker correction
-KI = 0.00006 # Help eliminate steady-state error a bit faster
-KD = 0.0031     # Slightly reduced to avoid slowing the settling
 
-SERVO_OPEN_PULSE = 0
-SERVO_MAX_CLOSE_PULSE = 2000
-SERVO_STEP_SIZE = 1.0
+# --- PID GAINS (placeholder, you should tune these) ---
+KP = 0.0002
+KI = 0.0000001
+KD = 0.000001
+
+# --- MODIFIED: Servo Physical Parameters ---
+SERVO_OPEN_PULSE = 1000  # The pulse value where the servo starts moving
+SERVO_MAX_CLOSE_PULSE = 2100 # Maximum safe pulse value
+SERVO_STEP_SIZE = 20.0   # The effective minimum step size of the servo
+
+# --- SENSOR & KALMAN CONFIG ---
 LEFT_CLAW_INDICES = [2, 3, 4, 5]
 RIGHT_CLAW_INDICES = [6, 7, 8, 9]
+
+# Kalman Gains from your tuning session
+Q_left = np.array([[0.09]])
+R_left = np.diag([3.1623, 3.1623, 3.1623, 3.1623])
+Q_right = np.array([[0.09]])
+R_right = np.diag([3.9811, 3.9811, 3.9811, 10.6606])
+
 
 # --- GLOBAL QUEUES & EVENTS ---
 incoming_queue = queue.Queue()
@@ -50,13 +61,6 @@ def data_processing_thread():
     H = np.array([[1], [1], [1], [1]])
     x_hat_initial = np.array([[0]])
     P_initial = np.array([[100]])
-    # Left Claw Tuning
-    Q_left = np.array([[0.0001]])
-    R_left = np.diag([0.5, 0.05, 0.05, 0.5]) 
-    # Right Claw Tuning
-    Q_right = np.array([[0.0001]])
-    R_right = np.diag([0.5, 0.05, 0.05, 0.5])
-    # Create filter instances
     kf_left_claw = MultivariateKalmanFilter(A, H, Q_left, R_left, x_hat_initial, P_initial)
     kf_right_claw = MultivariateKalmanFilter(A, H, Q_right, R_right, x_hat_initial, P_initial)
 
@@ -65,7 +69,7 @@ def data_processing_thread():
     servo_pulse = float(SERVO_OPEN_PULSE) 
     outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
     
-    print("[Controller] System initialized with Max Force logic. Press Ctrl+C to shut down.")
+    print("[Controller] System initialized. Press Ctrl+C to shut down.")
 
     while not shutdown_event.is_set():
         try:
@@ -91,13 +95,12 @@ def data_processing_thread():
                 left_raw_readings = [all_readings[i] for i in LEFT_CLAW_INDICES]
                 right_raw_readings = [all_readings[i] for i in RIGHT_CLAW_INDICES]
 
-                left_raw_avg = sum(left_raw_readings) / len(left_raw_readings)
-                right_raw_avg = sum(right_raw_readings) / len(right_raw_readings)
-
                 left_z = np.array([[r] for r in left_raw_readings])
                 right_z = np.array([[r] for r in right_raw_readings])
 
                 if is_first_reading:
+                    left_raw_avg = np.mean(left_raw_readings)
+                    right_raw_avg = np.mean(right_raw_readings)
                     kf_left_claw.x_hat = np.array([[left_raw_avg]])
                     kf_right_claw.x_hat = np.array([[right_raw_avg]])
                     is_first_reading = False
@@ -107,22 +110,24 @@ def data_processing_thread():
                 
                 overall_force = max(left_force, right_force)
 
+                # Send processed data for visualization
+                left_raw_avg = np.mean(left_raw_readings)
+                right_raw_avg = np.mean(right_raw_readings)
                 data_to_send = f"DATA:{left_raw_avg},{left_force},{right_raw_avg},{right_force},{overall_force}"
                 outgoing_queue.put(data_to_send)
 
                 if current_state == GripperState.CLOSING:
-                    # --- NEW SAFETY LOGIC ---
-                    # Check if either claw has exceeded the absolute maximum force.
                     if left_force > MAX_CLAW_FORCE or right_force > MAX_CLAW_FORCE:
                         current_state = GripperState.HOLDING
                         print(f"[SAFETY OVERRIDE] Force limit of {MAX_CLAW_FORCE} exceeded. Switching to HOLDING.")
-                        # Skip the rest of the PID logic for this cycle to prevent further tightening
                         continue 
-                    # --- END OF NEW SAFETY LOGIC ---
-
+                    
                     pid_output = pid.update(overall_force)
+                    # The PID output is now scaled by the effective step size
                     servo_pulse += pid_output * SERVO_STEP_SIZE
+                    # Clamp the pulse to the servo's physical limits
                     servo_pulse = max(SERVO_OPEN_PULSE, min(SERVO_MAX_CLOSE_PULSE, servo_pulse))
+                    
                     outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
                     
                     error = OVERALL_TARGET_FORCE - overall_force
@@ -136,7 +141,7 @@ def data_processing_thread():
                     current_state = GripperState.OPEN
                     print(f"[State Change] Release complete. State: {current_state.name}")
 
-            except ValueError:
+            except (ValueError, IndexError):
                 continue
 
         except queue.Empty:
