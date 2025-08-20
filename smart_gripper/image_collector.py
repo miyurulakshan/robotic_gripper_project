@@ -5,7 +5,7 @@ import time
 
 # --- CONFIGURATION ---
 # Make sure this URL matches the one from your object_recognizer.py file
-ESP32_CAMERA_URL = "http://192.168.1.17:81/stream" 
+ESP32_CAMERA_URL = "http://192.168.1.200:81/stream" 
 DATASET_PATH = "dataset"
 IMAGES_PER_OBJECT = 150
 

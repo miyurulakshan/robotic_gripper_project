@@ -12,6 +12,9 @@ const char* websockets_server = "ws://192.168.1.13:8765"; // Your PC's IP addres
 const int NUM_SENSORS = 8;
 const int fsrPins[NUM_SENSORS] = {6, 8, 7, 5, 3, 4, 2, 1};
 
+// --- CALIBRATION ---: Array to store the initial sensor offsets
+int fsrOffsets[NUM_SENSORS];
+
 const int potPin1 = 9;
 const int servoPin1 = 10;
 const int potPin2 = 11;
@@ -29,29 +32,42 @@ void onEventsCallback(WebsocketsEvent event, String data) {
     }
 }
 
-// --- THIS FUNCTION IS UPDATED ---
 void onMessageCallback(WebsocketsMessage message) {
     String msg = message.data();
-    //Serial.print("Command received from server: ");
-    //Serial.println(msg);
-
-    // Look for the new "PULSE1:" command for high-precision control
+    
     if (msg.startsWith("PULSE1:")) {
         int pulse_width = msg.substring(7).toInt();
-        myServo1.writeMicroseconds(pulse_width); // Use the high-precision function
+        myServo1.writeMicroseconds(pulse_width);
     } 
-    // You could add a "PULSE2:" command here later if needed
-    // else if (msg.startsWith("PULSE2:")) { ... }
+    else if (msg.startsWith("PULSE2:")) {
+        int pulse_width = msg.substring(7).toInt();
+        myServo2.writeMicroseconds(pulse_width);
+        Serial.print("Set Servo 2 pulse to: ");
+        Serial.println(pulse_width);
+    }
 }
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    // Attach the servo. For ESP32, you can optionally specify the min/max pulse widths.
-    // This improves the accuracy of the standard .write() but we will use .writeMicroseconds() directly.
-    myServo1.attach(servoPin1, 1000, 2000); // min and max pulse in microseconds
-    myServo2.attach(servoPin2);
+    // --- CALIBRATION ---: Run the FSR calibration routine
+    Serial.println("Starting FSR calibration... Do not touch the sensors.");
+    delay(2000); // Wait for sensors to stabilize
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        fsrOffsets[i] = analogRead(fsrPins[i]);
+        Serial.print("FSR ");
+        Serial.print(i);
+        Serial.print(" offset: ");
+        Serial.println(fsrOffsets[i]);
+    }
+    Serial.println("Calibration complete.");
+    // --- END CALIBRATION ---
+
+    myServo1.attach(servoPin1, 1000, 2000); 
+    myServo2.attach(servoPin2, 500, 2500);
+    myServo2.writeMicroseconds(2300); 
+
     Serial.println("Both Servos Initialized.");
     
     WiFi.begin(ssid, password);
@@ -85,11 +101,20 @@ void loop() {
         
         for (int i = 0; i < NUM_SENSORS; i++) {
             message += ",";
+            
+            // --- CALIBRATION ---: Apply the offset to the current reading
             int fsrReading = analogRead(fsrPins[i]);
-            message += String(fsrReading);
-            Serial.println(message);
+            int calibratedValue = fsrReading - fsrOffsets[i];
+            
+            // Ensure the reading doesn't go below zero due to noise
+            if (calibratedValue < 0) {
+                calibratedValue = 0;
+            }
+            
+            message += String(calibratedValue);
         }
         client.send(message);
+        Serial.println(message);
 
     } else {
         Serial.println("Client disconnected. Trying to reconnect...");
