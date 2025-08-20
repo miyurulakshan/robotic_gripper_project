@@ -35,8 +35,8 @@ ACCEPTABLE_ERROR_MARGIN = 50
 MAX_CLAW_FORCE = 2000
 MIN_FORCE_PER_CLAW = 200
 KP = 0.0005
-KI = 0.0000003
-KD = 0.000006
+KI = 0.00000015
+KD = 0.00000001
 SERVO_OPEN_PULSE = 800
 SERVO_MAX_CLOSE_PULSE = 2100
 SERVO_STEP_SIZE = 20.0
@@ -71,7 +71,6 @@ def data_processing_thread():
     outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
     outgoing_queue.put("STATUS:IDENTIFYING")
     
-    # MODIFICATION: Set servo 2 to its initial identification position.
     outgoing_queue.put("PULSE2:2300")
 
     print("[Controller] System initialized in IDENTIFYING mode.")
@@ -84,15 +83,13 @@ def data_processing_thread():
             # --- Handle State-Specific Messages (OBJECT, CMD) ---
             if current_system_state == SystemState.IDENTIFYING and data_packet.startswith("OBJECT:"):
                 detected = data_packet.split(':')[1]
-                # --- THIS IS THE MODIFIED LOGIC ---
-                # Lock on the first valid detection.
+                
                 if detected != "None":
                     locked_object = detected.lower()
                     OVERALL_TARGET_FORCE = TARGET_FORCES.get(locked_object, TARGET_FORCES["default"])
                     pid.set_setpoint(OVERALL_TARGET_FORCE)
                     current_system_state = SystemState.READY_TO_GRASP
                     
-                    # MODIFICATION: Move servo 2 to the grasping position.
                     outgoing_queue.put("PULSE2:1600")
                     
                     print(f"[Controller] Object locked: {locked_object}. Target force set to: {OVERALL_TARGET_FORCE}")
@@ -147,9 +144,11 @@ def data_processing_thread():
                 servo_pulse = float(SERVO_OPEN_PULSE)
                 outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
                 
-                # MODIFICATION: Wait 1 second, then move servo 2 to its home position.
                 time.sleep(1)
                 outgoing_queue.put("PULSE2:2300")
+                
+                # Wait 1 second AFTER servo moves before starting recognition.
+                time.sleep(1)
 
                 current_system_state = SystemState.IDENTIFYING
                 current_gripper_state = GripperState.OPEN
