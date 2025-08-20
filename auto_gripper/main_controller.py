@@ -25,10 +25,10 @@ class GripperState(Enum):
 TARGET_FORCES = {
     "paper_box": 300,
     "power_bank": 1700,
-    "egg": 400,
-    "default": 700 
+    "egg": 600,
+    "default": 700
 }
-OVERALL_TARGET_FORCE = TARGET_FORCES["default"] 
+OVERALL_TARGET_FORCE = TARGET_FORCES["default"]
 
 WEBSOCKET_URI = "ws://localhost:8765"
 ACCEPTABLE_ERROR_MARGIN = 50
@@ -70,6 +70,9 @@ def data_processing_thread():
     servo_pulse = float(SERVO_OPEN_PULSE)
     outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
     outgoing_queue.put("STATUS:IDENTIFYING")
+    
+    # MODIFICATION: Set servo 2 to its initial identification position.
+    outgoing_queue.put("PULSE2:2300")
 
     print("[Controller] System initialized in IDENTIFYING mode.")
 
@@ -88,6 +91,10 @@ def data_processing_thread():
                     OVERALL_TARGET_FORCE = TARGET_FORCES.get(locked_object, TARGET_FORCES["default"])
                     pid.set_setpoint(OVERALL_TARGET_FORCE)
                     current_system_state = SystemState.READY_TO_GRASP
+                    
+                    # MODIFICATION: Move servo 2 to the grasping position.
+                    outgoing_queue.put("PULSE2:1600")
+                    
                     print(f"[Controller] Object locked: {locked_object}. Target force set to: {OVERALL_TARGET_FORCE}")
                     outgoing_queue.put(f"STATUS:LOCKED:{locked_object.upper()}")
 
@@ -99,7 +106,7 @@ def data_processing_thread():
                     pid.reset()
                 elif command == "RESET":
                     current_system_state = SystemState.RELEASING
-            
+
             elif current_system_state == SystemState.EXECUTING_GRASP and data_packet.startswith("CMD:"):
                 command = data_packet.split(':')[1]
                 if command in ("RELEASE", "EMERGENCY", "RESET"):
@@ -131,14 +138,19 @@ def data_processing_thread():
                         if abs(error) < ACCEPTABLE_ERROR_MARGIN and left_force > MIN_FORCE_PER_CLAW and right_force > MIN_FORCE_PER_CLAW:
                             current_gripper_state = GripperState.HOLDING
                             print(f"[State Change] Target force of {OVERALL_TARGET_FORCE} achieved. State: HOLDING")
-            
+
             except (ValueError, IndexError):
-                pass 
+                pass
 
             # --- Handle Releasing State Action ---
             if current_system_state == SystemState.RELEASING:
                 servo_pulse = float(SERVO_OPEN_PULSE)
                 outgoing_queue.put(f"PULSE1:{int(servo_pulse)}")
+                
+                # MODIFICATION: Wait 1 second, then move servo 2 to its home position.
+                time.sleep(1)
+                outgoing_queue.put("PULSE2:2300")
+
                 current_system_state = SystemState.IDENTIFYING
                 current_gripper_state = GripperState.OPEN
                 locked_object = None
